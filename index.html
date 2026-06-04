@@ -3,11 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>세계 지각판 및 지진대/화산대 지도 (지우개 도구 포함)</title>
+    <title>세계 지각판 및 지진대/화산대 지도 (비율 고정형)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #aadaff; }
-        #map { width: 100%; height: 100vh; }
+        /* 1. 전체 화면 중앙 정렬 및 바깥 배경 설정 */
+        body, html { 
+            margin: 0; padding: 0; height: 100%; 
+            background-color: #1e272e; /* 지도 바깥쪽 여백을 채울 고급스러운 어두운 배경 */
+            display: flex; justify-content: center; align-items: center; 
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* 2. ★ 핵심: 16:9 비율을 유지하는 메인 가상 모니터 컨테이너 */
+        #screen-wrapper {
+            position: relative;
+            width: 100vw;
+            height: auto;
+            aspect-ratio: 16 / 9; /* 16:9 비율 강제 고정 */
+            max-height: 100vh;
+            max-width: calc(100vh * 16 / 9); /* 가로가 너무 길어지거나 세로가 짧아질 때 깨짐 방지 */
+            background-color: #aadaff;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            overflow: hidden;
+        }
+
+        /* 지도는 컨테이너 내부를 100% 채움 */
+        #map { width: 100%; height: 100%; }
         
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -15,11 +37,11 @@
             font-size: 16px; font-weight: bold; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
-        /* 좌측 하단 고정 범례 */
+        /* 모든 UI 요소를 고정된 컨테이너 내부 기준으로 배치 */
         .legend {
-            position: absolute; bottom: 30px; left: 30px;
-            background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.2); z-index: 1000; font-size: 14px; font-weight: bold;
+            position: absolute; bottom: 3%; left: 2%;
+            background: rgba(255, 255, 255, 0.95); padding: 12px 15px; border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2); z-index: 1000; font-size: 13px; font-weight: bold;
         }
         .legend-item { display: flex; align-items: center; margin-bottom: 8px; }
         .legend-item:last-child { margin-bottom: 0; }
@@ -27,38 +49,46 @@
         .eq-circle { background-color: #f1c40f; } 
         .vol-circle { background-color: #e74c3c; }
         
-        .leaflet-control-layers { font-size: 15px; font-weight: bold; padding: 10px; margin-bottom: 30px !important; margin-right: 30px !important; }
+        /* Leaflet 레이어 컨트롤 버튼 위치 조정 */
+        .leaflet-control-layers { 
+            font-size: 13px; font-weight: bold; padding: 8px; 
+            margin-bottom: 3% !important; margin-right: 2% !important; 
+        }
 
-        /* 그리기 도구(툴박스) 하단 중앙 배치 */
+        /* 그리기 도구 툴박스 위치 고정 및 반응형 폰트 크기 */
         .toolbox {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.95); padding: 10px 15px; border-radius: 8px;
+            position: absolute; bottom: 3%; left: 50%; transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95); padding: 8px 12px; border-radius: 8px;
             box-shadow: 0 0 15px rgba(0,0,0,0.2); z-index: 1000; 
-            display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+            display: flex; gap: 6px; align-items: center; justify-content: center;
         }
         .tool-btn {
-            padding: 10px 15px; font-size: 15px; font-weight: bold; border: 2px solid #ccc;
+            padding: 8px 12px; font-size: 13px; font-weight: bold; border: 2px solid #ccc;
             border-radius: 6px; cursor: pointer; background: white; transition: 0.2s;
+            white-space: nowrap;
         }
         .tool-btn:hover { background: #f0f0f0; }
         .tool-btn.active { border-color: #2c3e50; background: #e8f4f8; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
-    <div id="loading">지도를 설정하는 중입니다...</div>
-    <div id="map"></div>
-    
-    <div class="toolbox">
-        <button id="btn-move" class="tool-btn active">🖐️ 지도 이동</button>
-        <button id="btn-yellow" class="tool-btn">🟡 펜 (노랑)</button>
-        <button id="btn-red" class="tool-btn">🔴 펜 (빨강)</button>
-        <button id="btn-eraser" class="tool-btn">🧽 부분 지우기</button>
-        <button id="btn-clear" class="tool-btn">🗑️ 모두 지우기</button>
-    </div>
 
-    <div class="legend">
-        <div class="legend-item"><div class="circle eq-circle"></div>지진 (Earthquake)</div>
-        <div class="legend-item"><div class="circle vol-circle"></div>화산 (Volcano)</div>
+    <div id="screen-wrapper">
+        <div id="loading">지도를 설정하는 중입니다...</div>
+        <div id="map"></div>
+        
+        <div class="toolbox">
+            <button id="btn-move" class="tool-btn active">🖐️ 지도 이동</button>
+            <button id="btn-yellow" class="tool-btn">🟡 펜 (노랑)</button>
+            <button id="btn-red" class="tool-btn">🔴 펜 (빨강)</button>
+            <button id="btn-eraser" class="tool-btn">🧽 부분 지우기</button>
+            <button id="btn-clear" class="tool-btn">🗑️ 모두 지우기</button>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item"><div class="circle eq-circle"></div>지진 (Earthquake)</div>
+            <div class="legend-item"><div class="circle vol-circle"></div>화산 (Volcano)</div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -92,11 +122,13 @@
                     coordsToLatLng: coords => new L.LatLng(coords[1], coords[0] + 360)
                 }).addTo(boundariesLayer);
                 document.getElementById('loading').style.display = 'none';
+                
+                // 데이터 로드 후 지도 크기 한 번 더 리프레시
+                map.invalidateSize();
+                map.fitBounds(bounds);
             });
 
-        // =========================================================================
-        // 💡 [데이터 입력란] 여기에 보유하신 전체 데이터를 붙여넣으세요.
-        // =========================================================================
+        // 데이터 입력란
         const allData = `지진,38.2,142.1,환태평양
 지진,36.5,140.5,환태평양
 지진,35.3,139.8,환태평양
@@ -990,7 +1022,6 @@
 화산,13.1,41.7,동아프리카 (에리트레아 나브로)
 화산,12.3,42.4,동아프리카 (지부티 아르도우코바)
 화산,0.4,36.2,동아프리카 (케냐 메넨가이)`;
-        // =========================================================================
 
         // 입력된 데이터 분석 및 중복 제거
         const rows = allData.trim().split('\n');
@@ -1025,9 +1056,9 @@
 
         // 우측 하단 레이어 토글 메뉴
         const overlayMaps = {
-            "<span style='color:#000000'>⚫</span> 판의 경계선 (Plate Boundaries)": boundariesLayer,
-            "<span style='color:#f1c40f'>🟡</span> 지진대 (Earthquake Zones)": earthquakesLayer,
-            "<span style='color:#c0392b'>🔥</span> 화산대 (Volcanic Zones)": volcanoesLayer
+            "<span style='color:#000000'>⚫</span> 판의 경계선": boundariesLayer,
+            "<span style='color:#f1c40f'>🟡</span> 지진대": earthquakesLayer,
+            "<span style='color:#c0392b'>🔥</span> 화산대": volcanoesLayer
         };
         
         L.control.layers(null, overlayMaps, { 
@@ -1038,7 +1069,7 @@
         // =========================================================================
         // ★ 마우스 그리기 및 지우기 기능 로직
         // =========================================================================
-        let drawMode = null; // 'yellow', 'red', 'eraser', null(이동)
+        let drawMode = null; 
         let isDrawing = false;
         let currentLine = null;
         let drawnLines = []; 
@@ -1046,7 +1077,7 @@
         const btnMove = document.getElementById('btn-move');
         const btnYellow = document.getElementById('btn-yellow');
         const btnRed = document.getElementById('btn-red');
-        const btnEraser = document.getElementById('btn-eraser'); // 지우개 버튼 추가
+        const btnEraser = document.getElementById('btn-eraser');
         const btnClear = document.getElementById('btn-clear');
 
         function setDrawMode(mode, activeBtn) {
@@ -1059,7 +1090,7 @@
                 document.getElementById('map').style.cursor = 'crosshair'; 
             } else if (mode === 'eraser') {
                 map.dragging.disable(); 
-                document.getElementById('map').style.cursor = 'help'; // 지우개 모드임을 알 수 있는 마우스 커서
+                document.getElementById('map').style.cursor = 'help'; 
             } else { 
                 map.dragging.enable(); 
                 document.getElementById('map').style.cursor = ''; 
@@ -1071,30 +1102,22 @@
         btnRed.addEventListener('click', () => setDrawMode('red', btnRed));
         btnEraser.addEventListener('click', () => setDrawMode('eraser', btnEraser));
         
-        // 모두 지우기
         btnClear.addEventListener('click', () => {
             drawnLines.forEach(line => map.removeLayer(line));
             drawnLines = []; 
         });
 
-        // 마우스를 클릭했을 때 (그리기 시작 혹은 지우기 활성화)
         map.on('mousedown', function(e) {
             if (!drawMode) return;
             isDrawing = true;
-            
-            // 지우개 모드일 때는 새로운 선을 생성하지 않음
             if (drawMode === 'eraser') return;
 
             const color = drawMode === 'yellow' ? '#f1c40f' : '#e74c3c';
-            
-            // 새로운 선 생성 (interactive: true로 두어 지우개가 이 선을 인식할 수 있게 함)
             currentLine = L.polyline([e.latlng], { 
                 color: color, weight: 6, opacity: 0.9, lineJoin: 'round', interactive: true 
             }).addTo(map);
             
-            // ★ 새로 그린 선에 "부분 지우기" 이벤트를 부여
             currentLine.on('mousedown', function() {
-                // 선을 클릭했을 때 지우개 모드라면 삭제
                 if (drawMode === 'eraser') {
                     map.removeLayer(this);
                     drawnLines = drawnLines.filter(l => l !== this);
@@ -1102,7 +1125,6 @@
             });
             
             currentLine.on('mouseover', function() {
-                // 지우개 모드인 상태로 마우스를 꾹 누르고 선 위를 지나가면 삭제
                 if (drawMode === 'eraser' && isDrawing) {
                     map.removeLayer(this);
                     drawnLines = drawnLines.filter(l => l !== this);
@@ -1112,19 +1134,26 @@
             drawnLines.push(currentLine); 
         });
 
-        // 마우스를 드래그할 때
         map.on('mousemove', function(e) {
             if (!isDrawing || !currentLine) return;
-            // 펜 모드일 때만 선을 이어줌 (지우개 모드일 땐 무시)
             if (drawMode === 'yellow' || drawMode === 'red') {
                 currentLine.addLatLng(e.latlng); 
             }
         });
 
-        // 마우스 클릭을 뗄 때
         map.on('mouseup', function() {
             isDrawing = false;
             currentLine = null;
+        });
+
+        // =========================================================================
+        // ★ 창 크기가 바뀔 때 지도가 깨지지 않도록 자동으로 크기를 재계산하는 로직
+        // =========================================================================
+        window.addEventListener('resize', function() {
+            setTimeout(() => {
+                map.invalidateSize();
+                map.fitBounds(bounds);
+            }, 100);
         });
         
     </script>
